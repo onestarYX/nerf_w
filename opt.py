@@ -6,7 +6,7 @@ def get_opts():
     parser.add_argument('--root_dir', type=str, required=True,
                         help='root directory of dataset')
     parser.add_argument('--dataset_name', type=str, default='blender',
-                        choices=['blender', 'phototourism'],
+                        choices=['blender', 'phototourism', 'behave'],
                         help='which dataset to train/val')
     # for blender
     parser.add_argument('--data_perturb', nargs="+", type=str, default=[],
