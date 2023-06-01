@@ -103,6 +103,8 @@ class NeRFSystem(LightningModule):
         elif self.hparams.dataset_name == 'blender':
             kwargs['img_wh'] = tuple(self.hparams.img_wh)
             kwargs['perturbation'] = self.hparams.data_perturb
+        elif self.hparams.dataset_name == 'behave':
+            kwargs['img_wh'] = tuple(self.hparams.img_wh)
         self.train_dataset = dataset(split='train', **kwargs)
         self.val_dataset = dataset(split='val', **kwargs)
 

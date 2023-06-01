@@ -23,12 +23,12 @@ def get_opts():
                         default='/home/ubuntu/data/nerf_example_data/nerf_synthetic/lego',
                         help='root directory of dataset')
     parser.add_argument('--dataset_name', type=str, default='blender',
-                        choices=['blender', 'phototourism'],
+                        choices=['blender', 'phototourism', 'behave'],
                         help='which dataset to validate')
     parser.add_argument('--scene_name', type=str, default='test',
                         help='scene name, used as output folder name')
     parser.add_argument('--split', type=str, default='val',
-                        choices=['val', 'test', 'test_train'])
+                        choices=['val', 'test', 'test_train', 'train'])
     parser.add_argument('--img_wh', nargs="+", type=int, default=[800, 800],
                         help='resolution (img_w, img_h) of the image')
     # for phototourism
@@ -64,7 +64,7 @@ def get_opts():
     parser.add_argument('--beta_min', type=float, default=0.1,
                         help='minimum color variance for each ray')
 
-    parser.add_argument('--chunk', type=int, default=32*1024*4,
+    parser.add_argument('--chunk', type=int, default=32*1024,
                         help='chunk size to split the input to avoid OOM')
 
     parser.add_argument('--ckpt_path', type=str, required=True,
@@ -115,7 +115,7 @@ if __name__ == "__main__":
 
     kwargs = {'root_dir': args.root_dir,
               'split': args.split}
-    if args.dataset_name == 'blender':
+    if args.dataset_name == 'blender' or args.dataset_name == 'behave':
         kwargs['img_wh'] = tuple(args.img_wh)
     else:
         kwargs['img_downscale'] = args.img_downscale
@@ -193,7 +193,7 @@ if __name__ == "__main__":
                                     dataset.white_back,
                                     **kwargs)
 
-        if args.dataset_name == 'blender':
+        if args.dataset_name == 'blender' or args.dataset_name == 'behave':
             w, h = args.img_wh
         else:
             w, h = sample['img_wh']

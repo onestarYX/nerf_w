@@ -9,6 +9,9 @@ from pathlib import Path
 
 from .ray_utils import *
 
+ORIGINAL_W = 2048
+ORIGINAL_H = 1536
+
 def add_perturbation(img, perturbation, seed):
     if 'color' in perturbation:
         np.random.seed(seed)
@@ -61,13 +64,15 @@ class BehaveDataset(Dataset):
                 self.cam_extrinsics_meta.append(json.load(f))
 
         w, h = self.img_wh
+        w_ratio = w / ORIGINAL_W
+        h_ratio = h / ORIGINAL_H
         self.focal = []
         self.K = []
         for i in range(4):
-            fx = self.cam_intrinsics_meta[i]['color']['fx']
-            fy = self.cam_intrinsics_meta[i]['color']['fy']
-            cx = self.cam_intrinsics_meta[i]['color']['cx']
-            cy = self.cam_intrinsics_meta[i]['color']['cy']
+            fx = self.cam_intrinsics_meta[i]['color']['fx'] * w_ratio
+            fy = self.cam_intrinsics_meta[i]['color']['fy'] * h_ratio
+            cx = self.cam_intrinsics_meta[i]['color']['cx'] * w_ratio
+            cy = self.cam_intrinsics_meta[i]['color']['cy'] * h_ratio
             self.focal.append((fx, fy))
             K = np.eye(3)
             K[0, 0] = fx
@@ -86,29 +91,45 @@ class BehaveDataset(Dataset):
         for i in range(4):
             self.directions.append(get_ray_directions(h, w, self.K[i])) # (h, w, 3)
             
-        if self.split == 'train': # create buffer of all rays and rgb data
-            self.all_rays = []
-            self.all_rgbs = []
-            t = 0
-            for frame_dir in self.seq_dir.iterdir():
-                if frame_dir.name == 'info.json':
-                    continue
-                for file in frame_dir.iterdir():
-                    if 'color.jpg' not in file.name:
-                        continue
-                    image_path = str(file)
-                    cam_idx = int(file.name.split('.')[0][1])
-                    c2w = np.zeros((3, 4))
-                    rotation = np.array(self.cam_extrinsics_meta[cam_idx]['rotation']).reshape((3, 3))
-                    translation = np.array(self.cam_extrinsics_meta[cam_idx]['translation'])
-                    c2w[:3, :3] = rotation
-                    c2w[:3, 3] = translation
-                    c2w = torch.tensor(c2w, dtype=torch.float32)
+        # create buffer of all rays and rgb data
+        self.all_rays = []
+        self.all_rgbs = []
+        # Get list of all frame directories.
+        def sort_frame(path):
+            return int(path.name[1:5])
+        frame_dir_list = []
+        for frame_dir in self.seq_dir.iterdir():
+            if frame_dir.name == 'info.json':
+                continue
+            frame_dir_list.append(frame_dir)
+        # frame_dir_list.sort(key=sort_frame)
 
-                    img = Image.open(image_path)
+        # Do train/validation split
+        num_frames_train = int(len(frame_dir_list) * 0.8)
+        if self.split == 'train':
+            t = 0
+            frame_dir_list = frame_dir_list[:num_frames_train]
+        elif self.split == 'val':
+            t = num_frames_train * 4    # TODO: this should be modified if not all frame dir has 4 images.
+            frame_dir_list = frame_dir_list[num_frames_train:]
+
+        for frame_dir in frame_dir_list:
+            for file in frame_dir.iterdir():
+                if 'color.jpg' not in file.name:
+                    continue
+                image_path = str(file)
+                cam_idx = int(file.name.split('.')[0][1])
+                c2w = np.zeros((3, 4))
+                rotation = np.array(self.cam_extrinsics_meta[cam_idx]['rotation']).reshape((3, 3))
+                translation = np.array(self.cam_extrinsics_meta[cam_idx]['translation'])
+                c2w[:3, :3] = rotation
+                c2w[:3, 3] = translation
+                c2w = torch.tensor(c2w, dtype=torch.float32)
+
+                with Image.open(image_path) as img:
                     img = self.transform(img)  # (4, h, w)
-                    img = img.view(4, -1).permute(1, 0)  # (h*w, 4) RGBA
-                    img = img[:, :3] * img[:, -1:] + (1 - img[:, -1:])  # blend A to RGB
+                    img = img.view(3, -1).permute(1, 0)  # (h*w, 4) RGBA
+                    # img = img[:, :3] * img[:, -1:] + (1 - img[:, -1:])  # blend A to RGB
                     self.all_rgbs += [img]
 
                     rays_o, rays_d = get_rays(self.directions[cam_idx], c2w)  # both (h*w, 3)
@@ -119,86 +140,35 @@ class BehaveDataset(Dataset):
                                                  self.far * torch.ones_like(rays_o[:, :1]),
                                                  rays_t],
                                                 1)]  # (h*w, 8)
-                    t += 1
+                t += 1
 
-
-            #     image_path = os.path.join(self.root_dir, f"{frame['file_path']}.png")
-            #     img = Image.open(image_path)
-            #     if t != 0: # perturb everything except the first image.
-            #                # cf. Section D in the supplementary material
-            #         img = add_perturbation(img, self.perturbation, t)
-            #
-            #     img = img.resize(self.img_wh, Image.LANCZOS)
-            #     img = self.transform(img) # (4, h, w)
-            #     img = img.view(4, -1).permute(1, 0) # (h*w, 4) RGBA
-            #     img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-            #     self.all_rgbs += [img]
-            #
-            #     rays_o, rays_d = get_rays(self.directions, c2w) # both (h*w, 3)
-            #     rays_t = t * torch.ones(len(rays_o), 1)
-            #
-            #     self.all_rays += [torch.cat([rays_o, rays_d,
-            #                                  self.near*torch.ones_like(rays_o[:, :1]),
-            #                                  self.far*torch.ones_like(rays_o[:, :1]),
-            #                                  rays_t],
-            #                                  1)] # (h*w, 8)
-            #
+        if self.split == 'train':
             self.all_rays = torch.cat(self.all_rays, 0) # (len(self.meta['frames])*h*w, 3)
             self.all_rgbs = torch.cat(self.all_rgbs, 0) # (len(self.meta['frames])*h*w, 3)
 
     def define_transforms(self):
-        self.transform = T.ToTensor()
+        self.transform = T.Compose([
+            T.ToTensor(),
+            T.Resize(size=self.img_wh)
+        ])
+
 
     def __len__(self):
         if self.split == 'train':
             return len(self.all_rays)
-        if self.split == 'val':
-            return 8 # only validate 8 images (to support <=8 gpus)
-        return len(self.all_rgbs)
+        elif self.split == 'val':
+            return len(self.all_rays)
 
     def __getitem__(self, idx):
-        if self.split == 'train': # use data in the buffers
+        if self.split == 'train':
             sample = {'rays': self.all_rays[idx, :8],
                       'ts': self.all_rays[idx, 8].long(),
                       'rgbs': self.all_rgbs[idx]}
-
-        else: # create data for each image separately
-            frame = self.meta['frames'][idx]
-            c2w = torch.FloatTensor(frame['transform_matrix'])[:3, :4]
-            t = 0 # transient embedding index, 0 for val and test (no perturbation)
-
-            img = Image.open(os.path.join(self.root_dir, f"{frame['file_path']}.png"))
-            if self.split == 'test_train' and idx != 0:
-                t = idx
-                img = add_perturbation(img, self.perturbation, idx)
-            img = img.resize(self.img_wh, Image.LANCZOS)
-            img = self.transform(img) # (4, H, W)
-            valid_mask = (img[-1]>0).flatten() # (H*W) valid color area
-            img = img.view(4, -1).permute(1, 0) # (H*W, 4) RGBA
-            img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-
-            rays_o, rays_d = get_rays(self.directions, c2w)
-
-            rays = torch.cat([rays_o, rays_d, 
-                              self.near*torch.ones_like(rays_o[:, :1]),
-                              self.far*torch.ones_like(rays_o[:, :1])],
-                              1) # (H*W, 8)
-
-            sample = {'rays': rays,
-                      'ts': t * torch.ones(len(rays), dtype=torch.long),
-                      'rgbs': img,
-                      'c2w': c2w,
-                      'valid_mask': valid_mask}
-
-            if self.split == 'test_train' and self.perturbation:
-                 # append the original (unperturbed) image
-                img = Image.open(os.path.join(self.root_dir, f"{frame['file_path']}.png"))
-                img = img.resize(self.img_wh, Image.LANCZOS)
-                img = self.transform(img) # (4, H, W)
-                valid_mask = (img[-1]>0).flatten() # (H*W) valid color area
-                img = img.view(4, -1).permute(1, 0) # (H*W, 4) RGBA
-                img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-                sample['original_rgbs'] = img
-                sample['original_valid_mask'] = valid_mask
+        elif self.split == 'val':
+            sample = {
+                'rays': self.all_rays[idx][:, :8],
+                'ts': self.all_rays[idx][:, 8].long(),
+                'rgbs': self.all_rgbs[idx]
+            }
 
         return sample
