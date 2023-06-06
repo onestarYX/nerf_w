@@ -47,6 +47,8 @@ You can render your model's reconstruction on the validation split by:
 python eval.py --dataset_name behave --root_dir data/behave/Date01/Date01_Sub01_backpack_back --scene_name behave_0 --N_importance 64 --img_wh 1024 768 --N_vocab 168 --ckpt_path ckpts/behave_exp/epoch=3.ckpt --encode_a --encode_t --split val
 ```
 
+</details>
+
 ## Blender
 
 <details>
