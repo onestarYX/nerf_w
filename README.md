@@ -1,26 +1,51 @@
-# nerf_pl
+# NeRF-W
 
-Unofficial implementation of [NeRF-W](https://nerf-w.github.io/) (NeRF in the wild) using pytorch ([pytorch-lightning](https://github.com/PyTorchLightning/pytorch-lightning)). I try to reproduce (some of) the results on the lego dataset (Section D). Training on [Phototourism real images](https://github.com/ubc-vision/image-matching-benchmark) (as the main content of the paper) has also passed. Please read the following sections for the results.
+Unofficial implementation of [NeRF-W](https://nerf-w.github.io/) (NeRF in the wild) using pytorch ([pytorch-lightning](https://github.com/PyTorchLightning/pytorch-lightning)).
 
-The code is largely based on NeRF implementation (see master or dev branch), the main difference is the model structure and the rendering process, which can be found in the two files under `models/`.
+**Added support for the Behave dataset.** See below.
 
 # :computer: Installation
 
-## Hardware
-
-* OS: Ubuntu 18.04
-* NVIDIA GPU with **CUDA>=10.2** (tested with 1 RTX2080Ti)
-
 ## Software
 
-* Clone this repo by `git clone https://github.com/kwea123/nerf_pl`
-* Python>=3.6 (installation via [anaconda](https://www.anaconda.com/distribution/) is recommended, use `conda create -n nerf_pl python=3.6` to create a conda environment and activate it by `conda activate nerf_pl`)
+* Python>=3.6 (installation via [anaconda](https://www.anaconda.com/distribution/) is recommended, use `conda create -n nerfw python=3.8` to create a conda environment and activate it by `conda activate nerfw`)
 * Python libraries
     * Install core requirements by `pip install -r requirements.txt`
     
 # :key: Training
 
 #### Update: There is a [difference](https://github.com/kwea123/nerf_pl/issues/130) between the paper: I didn't add the appearance embedding in the coarse model while it should. Please change [this line](https://github.com/kwea123/nerf_pl/blob/nerfw/models/nerf.py#L65) to `self.encode_appearance = encode_appearance` to align with the paper.
+
+## Behave
+
+<details>
+  <summary>Steps</summary>
+
+### Data download
+Please download the dataset [here](https://virtualhumans.mpi-inf.mpg.de/behave/license.html).
+For testing, you can download only one of the sequences. Then you need to download the **Calibration files**.
+
+After downloading, you should have some file structure like this:
+```angular2html
+behave_root/
+    calibs/
+    seq_name/ (Sort by date, e.g. Date01)
+        sub_seq_name1/ (e.g. Date01_Sub01_backpack_back)
+        sub_seq_name2/
+        ...
+```
+
+### Train
+You can train the model on one of the sequences in the Behave dataset. Example:
+```
+python train.py --dataset_name behave --root_dir data/behave/Date01/Date01_Sub01_backpack_back --N_importance 64 --img_wh 1024 768 --N_vocab 168 --noise_std 0 --num_epochs 20 --batch_size 1024 --optimizer adam --lr 5e-4 --lr_scheduler cosine --exp_name behave_exp --encode_a --encode_t
+```
+
+### Evaluation
+You can render your model's reconstruction on the validation split by:
+```
+python eval.py --dataset_name behave --root_dir data/behave/Date01/Date01_Sub01_backpack_back --scene_name behave_0 --N_importance 64 --img_wh 1024 768 --N_vocab 168 --ckpt_path ckpts/behave_exp/epoch=3.ckpt --encode_a --encode_t --split val
+```
 
 ## Blender
 
